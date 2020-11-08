@@ -1313,6 +1313,35 @@ static PyObject *PyLoadCursor(PyObject *self, PyObject *args)
     return PyWinLong_FromHANDLE(ret);
 }
 
+// @pymethod [string]|win32api|CommandLineToArgv|Parses a Unicode command line string and returns a list of command line arguments, in a way that is similar to sys.argv.
+static PyObject *PyCommandLineToArgv(PyObject *self, PyObject *args)
+{
+    const Py_UNICODE *cmdLine;
+    if (!PyArg_ParseTuple(args, "u", &cmdLine)) // @pyparm string|cmdLine||A string that contains the full command line. If this parameter is an empty string the function returns the path to the current executable file.
+        return NULL;
+    int numArgs = 0;
+    LPWSTR *szArglist = CommandLineToArgvW(cmdLine, &numArgs);
+    if (szArglist == NULL)
+        ReturnAPIError("CommandLineToArgvW");
+
+    PyObject *result = PyList_New(numArgs);
+    if (!result)
+        goto done;
+
+    for (int i=0; i < numArgs; i++) {
+        PyObject *ob = PyWinObject_FromWCHAR(szArglist[i]);
+        if (ob == NULL) {
+            Py_DECREF(result);
+            result = NULL;
+            goto done;
+        }
+        PyList_SET_ITEM(result, i, ob);
+    }
+done:
+    LocalFree(szArglist);
+    return result;
+}
+
 // @pymethod string|win32api|GetCommandLine|Retrieves the current application's command line.
 static PyObject *PyGetCommandLine(PyObject *self, PyObject *args)
 {
@@ -5102,16 +5131,37 @@ static PyObject *PyOpenProcess(PyObject *self, PyObject *args)
     DWORD pid, reqdAccess;
     BOOL inherit;
     if (!PyArg_ParseTuple(
-            args, "iil:OpenProcess",
+            args, "kik:OpenProcess",
             &reqdAccess,  // @pyparm int|reqdAccess||The required access.
             &inherit,  // @pyparm int|bInherit||Specifies whether the returned handle can be inherited by a new process
                        // created by the current process. If TRUE, the handle is inheritable.
             &pid))     // @pyparm int|pid||The process ID
         return NULL;
-    PyW32_BEGIN_ALLOW_THREADS HANDLE handle = OpenProcess(reqdAccess, inherit, pid);
+    PyW32_BEGIN_ALLOW_THREADS;
+    HANDLE handle = OpenProcess(reqdAccess, inherit, pid);
     PyW32_END_ALLOW_THREADS;
     if (handle == NULL)
         return ReturnAPIError("OpenProcess");
+    return PyWinObject_FromHANDLE(handle);
+}
+
+// @pymethod <o PyHANDLE>|win32api|OpenThread|Retrieves a handle to an existing thread
+static PyObject *PyOpenThread(PyObject *self, PyObject *args)
+{
+    DWORD pid, reqdAccess;
+    BOOL inherit;
+    if (!PyArg_ParseTuple(
+            args, "kik:OpenThread",
+            &reqdAccess,  // @pyparm int|reqdAccess||The required access.
+            &inherit,  // @pyparm int|bInherit||Specifies whether the returned handle can be inherited by a new process
+                       // created by the current process. If TRUE, the handle is inheritable.
+            &pid))     // @pyparm int|pid||The thread ID
+        return NULL;
+    PyW32_BEGIN_ALLOW_THREADS;
+    HANDLE handle = OpenThread(reqdAccess, inherit, pid);
+    PyW32_END_ALLOW_THREADS;
+    if (handle == NULL)
+        return ReturnAPIError("OpenThread");
     return PyWinObject_FromHANDLE(handle);
 }
 
@@ -6105,6 +6155,7 @@ static struct PyMethodDef win32api_functions[] = {
      METH_VARARGS | METH_KEYWORDS},     // @pymeth ChangeDisplaySettingsEx|Changes video mode for specified display
     {"ClipCursor", PyClipCursor, 1},    // @pymeth ClipCursor|Confines the cursor to a rectangular area on the screen.
     {"CloseHandle", PyCloseHandle, 1},  // @pymeth CloseHandle|Closes an open handle.
+    {"CommandLineToArgv", PyCommandLineToArgv, 1}, // @pymeth CommandLineToArgv|Parses a Unicode command line string and returns a list of command line arguments, in a way that is similar to sys.argv.
     {"CopyFile", PyCopyFile, 1},        // @pymeth CopyFile|Copy a file.
     {"DebugBreak", PyDebugBreak, 1},    // @pymeth DebugBreak|Breaks into the C debugger.
     {"DeleteFile", PyDeleteFile, 1},    // @pymeth DeleteFile|Deletes the specified file.
@@ -6315,6 +6366,7 @@ static struct PyMethodDef win32api_functions[] = {
     {"MoveFile", PyMoveFile, 1},                    // @pymeth MoveFile|Moves or renames a file.
     {"MoveFileEx", PyMoveFileEx, 1},                // @pymeth MoveFileEx|Moves or renames a file.
     {"OpenProcess", PyOpenProcess, 1},              // @pymeth OpenProcess|Retrieves a handle to an existing process.
+    {"OpenThread", PyOpenThread, 1},              // @pymeth OpenProcess|Retrieves a handle to an existing thread.
     {"OutputDebugString", PyOutputDebugString, 1},  // @pymeth OutputDebugString|Writes output to the Windows debugger.
     {"PostMessage", PyPostMessage, 1},              // @pymeth PostMessage|Post a message to a window.
     {"PostQuitMessage", PyPostQuitMessage, 1},      // @pymeth PostQuitMessage|Posts a quit message.
